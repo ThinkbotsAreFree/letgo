@@ -28,16 +28,28 @@ Letgo.prototype.signal = function(access, varname, value) {
     
     for (let watcher of this.watchers)
         if (watcher.active && watcher.pattern.test(access))
-            this.feed(watcher.execute(access, varname, value), watcher.priority);
+            this.feed(watcher.execute(access, varname, value), watcher);
+}
+
+
+
+Letgo.prototype.errorless = function(procedure) {
+    
+    return function() {
+        try { return procedure.apply(this, arguments); }
+        catch(e) { return { error: e }; }
+    }
 }
 
 
 
 Letgo.prototype.watcher = function(select, execute, tagline, priority) {
 
+    let procedure = this.errorless(execute);
     let unit = {
+        type: this.watchers,
         pattern: select instanceof RegExp ? select : new RegExp(select),
-        execute: execute,
+        execute: procedure,
         tagline: tagline || '',
         active: true,
         priority: priority
@@ -50,9 +62,11 @@ Letgo.prototype.watcher = function(select, execute, tagline, priority) {
 
 Letgo.prototype.handler = function(context, execute, tagline, priority) {
 
+    let procedure = this.errorless(execute);
     let unit = {
+        type: this.handlers,
         context: context,
-        execute: execute,
+        execute: procedure,
         tagline: tagline || '',
         active: true,
         priority: priority
@@ -94,17 +108,18 @@ Letgo.prototype.inject = function(input) {
 
     for (let handler of this.handlers)
         if (handler.active && this.match(input, handler.context)) 
-            this.feed(handler.execute(input), handler.priority);
+            this.feed(handler.execute(input), handler);
 }
 
 
 
-Letgo.prototype.feed = function(output, priority) {
+Letgo.prototype.feed = function(output, origin) {
     
     if (output) this.feedloop.push(
         Object.assign({
-            priority: priority,
-            timestamp: Date.now()
+            priority: origin.priority,
+            timestamp: Date.now(),
+            origin: origin
         }, output)
     );
 }
@@ -128,7 +143,7 @@ Letgo.prototype.run = function(interval) {
         this.inject(this.feedloop.shift());
         this.feedloop.sort((a, b) => b.priority - a.priority);
         if (arguments.length) setTimeout(
-            () => this.run,
+            () => this.run(interval),
             Math.max(0, interval - (Date.now() - start))
         );
     }
@@ -145,11 +160,12 @@ Letgo.prototype.run = function(interval) {
 
 let lg = new Letgo();
 
-lg.watcher("foo", (a, n, v) => {
+lg.watcher("foo.*", (a, n, v) => {
    
    console.log("action: "+a);
    console.log("varname: "+n);
    console.log("value: "+v);
+
 }, "typical tags");
 
 lg.handler({ t: v => v == "ok" }, (c) => {
@@ -157,19 +173,33 @@ lg.handler({ t: v => v == "ok" }, (c) => {
     console.log("[ok]", c.content);
     lg.access("football")("but", 30);
     
-    return { end: "done" };
+   return {
+       t: "ok",
+       content: Date.now().toString()
+   };
 });
 
-lg.handler({ end: v => v }, (context) => {
+lg.handler({ input: input => "error" in input }, (context) => {
     
-    console.log("[end]", context.end);
-});
+    console.warn("[context.error]", context.error);
+})
 
-lg.disable(".*ica.*");
+//lg.disable(".*ica.*");
 
 lg.inject({ t: "ok", content: "woow" });
 
-lg.run(200);
+lg.run(1000);
+
+
+
+
+
+
+
+
+
+
+
 
 
 

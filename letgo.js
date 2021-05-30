@@ -11,68 +11,12 @@ function Letgo() {
 
 
 
-Letgo.prototype.access = function(access) {
-    
-    var self = this;
-    return function(varname, value) {
-        self.signal(access, varname, value);
-        return (arguments.length > 1) ?
-            self.varboard[varname] = value :
-            self.varboard[varname];
-    }
-}
-
-
-
-Letgo.prototype.signal = function(access, varname, value) {
-    
-    for (let watcher of this.watchers)
-        if (watcher.active && watcher.pattern.test(access))
-            this.feed(watcher.execute(access, varname, value), watcher);
-}
-
-
-
-Letgo.prototype.errorless = function(procedure) {
+Letgo.prototype.trycatch = function(procedure) {
     
     return function() {
         try { return procedure.apply(this, arguments); }
         catch(e) { return { error: e }; }
     }
-}
-
-
-
-Letgo.prototype.watcher = function(select, execute, tagline, priority) {
-
-    let procedure = this.errorless(execute);
-    let unit = {
-        type: this.watchers,
-        pattern: select instanceof RegExp ? select : new RegExp(select),
-        execute: procedure,
-        tagline: tagline || '',
-        active: true,
-        priority: priority
-    };
-    this.watchers.push(unit);
-    return unit;
-}
-
-
-
-Letgo.prototype.handler = function(context, execute, tagline, priority) {
-
-    let procedure = this.errorless(execute);
-    let unit = {
-        type: this.handlers,
-        context: context,
-        execute: procedure,
-        tagline: tagline || '',
-        active: true,
-        priority: priority
-    };
-    this.handlers.push(unit);
-    return unit;
 }
 
 
@@ -104,15 +48,6 @@ Letgo.prototype.disable = function(select) {
 
 
 
-Letgo.prototype.inject = function(input) {
-
-    for (let handler of this.handlers)
-        if (handler.active && this.match(input, handler.context)) 
-            this.feed(handler.execute(input), handler);
-}
-
-
-
 Letgo.prototype.feed = function(output, origin) {
     
     if (output) this.feedloop.push(
@@ -126,12 +61,75 @@ Letgo.prototype.feed = function(output, origin) {
 
 
 
+Letgo.prototype.watcher = function(select, execute, tagline, priority) {
+
+    let unit = {
+        type: this.watchers,
+        pattern: select instanceof RegExp ? select : new RegExp(select),
+        execute: execute,
+        tagline: tagline || '',
+        active: true,
+        priority: priority
+    };
+    this.watchers.push(unit);
+    return unit;
+}
+
+
+
+Letgo.prototype.signal = function(access, varname, value) {
+    
+    for (let watcher of this.watchers)
+        if (watcher.active && watcher.pattern.test(access))
+            this.feed(this.trycatch(watcher.execute)(access, varname, value), watcher);
+}
+
+
+
+Letgo.prototype.access = function(access) {
+    
+    var self = this;
+    return function(varname, value) {
+        self.signal(access, varname, value);
+        return (arguments.length > 1) ?
+            self.varboard[varname] = value :
+            self.varboard[varname];
+    }
+}
+
+
+
+Letgo.prototype.handler = function(context, execute, tagline, priority) {
+
+    let unit = {
+        type: this.handlers,
+        context: context,
+        execute: execute,
+        tagline: tagline || '',
+        active: true,
+        priority: priority
+    };
+    this.handlers.push(unit);
+    return unit;
+}
+
+
+
 Letgo.prototype.match = function(input, matcher) {
 
     for (let key in matcher)
         if (!matcher[key](key == "input" ? input : input[key]))
             return false;
     return true;
+}
+
+
+
+Letgo.prototype.inject = function(input) {
+
+    for (let handler of this.handlers)
+        if (handler.active && this.match(input, handler.context)) 
+            this.feed(this.trycatch(handler.execute)(input), handler);
 }
 
 
@@ -148,60 +146,5 @@ Letgo.prototype.run = function(interval) {
         );
     }
 }
-
-
-
-
-
-
-
-
-
-
-let lg = new Letgo();
-
-lg.watcher("foo.*", (a, n, v) => {
-   
-   console.log("action: "+a);
-   console.log("varname: "+n);
-   console.log("value: "+v);
-
-}, "typical tags");
-
-lg.handler({ t: v => v == "ok" }, (c) => {
-    
-    console.log("[ok]", c.content);
-    lg.access("football")("but", 30);
-    
-   return {
-       t: "ok",
-       content: Date.now().toString()
-   };
-});
-
-lg.handler({ input: input => "error" in input }, (context) => {
-    
-    console.warn("[context.error]", context.error);
-})
-
-//lg.disable(".*ica.*");
-
-lg.inject({ t: "ok", content: "woow" });
-
-lg.run(1000);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
